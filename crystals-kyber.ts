@@ -222,7 +222,7 @@ function numberTheoreticTransformInPlace(A: Uint16Array[]): void {
         }
       }
     }
-    applyBarrettReductionInPlace(r);
+    applyBarrettReductionToPolynomialInPlace(r);
     A[i] = r;
   }
 }
@@ -279,7 +279,7 @@ function barrettReduce(a: number): number {
 }
 
 // Apply Barrett reduction to a polynomial. Mutates the polynomial in place
-function applyBarrettReductionInPlace(r: Uint16Array): void {
+function applyBarrettReductionToPolynomialInPlace(r: Uint16Array): void {
   const v = Math.floor(
     ((1 << 26) + Math.floor(Params[selectedParamSet].q / 2)) /
       Params[selectedParamSet].q
@@ -291,14 +291,16 @@ function applyBarrettReductionInPlace(r: Uint16Array): void {
 }
 
 // Apply Barrett reduction to a vector of polynomials. Mutates the vector in place
-function applyBarrettReductionToVectorInPlace(r: Uint16Array[]): void {
+function applyBarrettReductionToPolynomialVectorInPlace(
+  r: Uint16Array[]
+): void {
   for (let i = 0; i < Params[selectedParamSet].k; i++) {
-    applyBarrettReductionInPlace(r[i]);
+    applyBarrettReductionToPolynomialInPlace(r[i]);
   }
 }
 
 // Convert all elements of a polynomial to Montgomery domain. Mutates the polynomial in place.
-function convertToMontgomeryInPlace(r: Uint16Array): void {
+function convertPolynomialToMontgomeryInPlace(r: Uint16Array): void {
   const f = (1 << 32) % Params[selectedParamSet].q;
   for (let j = 0; j < Params[selectedParamSet].n; j++) {
     r[j] = montgomeryReduction(r[j] * f);
@@ -306,7 +308,7 @@ function convertToMontgomeryInPlace(r: Uint16Array): void {
 }
 
 // Implement A o s described in Algorithm 4 of the Kyber paper. Implementation from the reference implementation in C
-function applyMatrix(
+function multiplyPolynomialMatrixAndVector(
   A: Uint16Array[][],
   s: Uint16Array[],
   resultLen: number,
@@ -320,10 +322,10 @@ function applyMatrix(
       addPolynomialsInPlace(result[i], result[i], t);
     }
 
-    applyBarrettReductionInPlace(result[i]);
+    applyBarrettReductionToPolynomialInPlace(result[i]);
 
     if (convertToMontgomery) {
-      convertToMontgomeryInPlace(result[i]);
+      convertPolynomialToMontgomeryInPlace(result[i]);
     }
   }
   return result;
@@ -410,9 +412,9 @@ function kyberCPAPKEKeyGen() {
   numberTheoreticTransformInPlace(s);
   numberTheoreticTransformInPlace(e);
 
-  const t = applyMatrix(A, s, Params[selectedParamSet].k); // t = A o s
+  const t = multiplyPolynomialMatrixAndVector(A, s, Params[selectedParamSet].k); // t = A o s
   addPolynomialVectorsInPlace(t, t, e);
-  applyBarrettReductionToVectorInPlace(t);
+  applyBarrettReductionToPolynomialVectorInPlace(t);
 
   const polyVecBytes = Params[selectedParamSet].k * POLYBYTES;
   const publicKey = new Uint8Array(polyVecBytes + SYMBYTES);
@@ -465,7 +467,7 @@ function inverseNumberTheoreticTransformInPlace(B: Uint16Array): void {
 }
 
 // Compress and serialize a vector of polynomials. Described in Section 1.1 in the Kyber paper. Implementation from the reference implementation in C
-function compressVector(m: Uint16Array[]): Uint8Array {
+function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
   const r = new Uint8Array(Params[selectedParamSet].k === 4 ? 160 : 128);
   const t = new Uint16Array(8);
   const n = Params[selectedParamSet].n;
@@ -522,7 +524,7 @@ function compressVector(m: Uint16Array[]): Uint8Array {
 }
 
 // Compress and serialize a polynomial. Described in Section 1.1 in the Kyber paper. Implementation from the reference implementation in C
-function compress(m: Uint16Array): Uint8Array {
+function compressPolynomial(m: Uint16Array): Uint8Array {
   const r = new Uint8Array(Params[selectedParamSet].n / 8);
   const t = new Uint8Array(8);
   if (Params[selectedParamSet].k !== 4) {
@@ -613,21 +615,31 @@ function kyberCPAPKEEncrypt(
     Params[selectedParamSet].eta2
   );
   numberTheoreticTransformInPlace(r);
-  const u = applyMatrix(At, r, Params[selectedParamSet].k, false);
+  const u = multiplyPolynomialMatrixAndVector(
+    At,
+    r,
+    Params[selectedParamSet].k,
+    false
+  );
   for (let i = 0; i < Params[selectedParamSet].k; i++) {
     inverseNumberTheoreticTransformInPlace(u[i]);
   }
   addPolynomialVectorsInPlace(u, u, e);
-  applyBarrettReductionToVectorInPlace(u);
+  applyBarrettReductionToPolynomialVectorInPlace(u);
 
-  const [v] = applyMatrix([t], r, Params[selectedParamSet].k, false);
+  const [v] = multiplyPolynomialMatrixAndVector(
+    [t],
+    r,
+    Params[selectedParamSet].k,
+    false
+  );
   inverseNumberTheoreticTransformInPlace(v);
   addPolynomialsInPlace(v, v, e2);
   addPolynomialsInPlace(v, v, convertMessageToPolynomial(message));
-  applyBarrettReductionInPlace(v);
+  applyBarrettReductionToPolynomialInPlace(v);
 
-  const c1 = compressVector(u);
-  const c2 = compress(v);
+  const c1 = compressPolynomialVector(u);
+  const c2 = compressPolynomial(v);
 
   return Uint8Array.from([...c1, ...c2]);
 }
@@ -671,8 +683,6 @@ function kyberCCAKEMEncrypt(publicKey: Uint8Array): {
 }
 
 // TODO: Exchange keys
-
-// TODO: Encrypt message with public key
 
 // TODO: Decrypt message with private key
 
