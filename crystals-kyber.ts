@@ -687,9 +687,16 @@ function kyberCCAKEMEncrypt(publicKey: Uint8Array): {
 // TODO: Decrypt message with private key
 
 // TODO: Implement CLI ('commander' or use parseArgs from node:util)
+// This is a KEM algorithm. So, you create a random key pair (public and private key), and then send the public key to the other party. The other party uses the public key to create a shared secret and a cipher text (i.e,. the shared secret in an encrypted form). The other party sends the cipher text back to the first party. The first party uses their private key to decrypt the cipher text and get the shared secret. Now both parties have the shared secret -- this can be used as a symmetric key for encryption/decryption (e.g., with AES).
 const selectedParamSet: keyof typeof Params = 'Kyber512' as const;
 
 const { publicKey, secretKey } = kyberCCAKEMKeyGen();
+
+// const { cipherText, sharedSecret } = kyberCCAKEMEncrypt(publicKey);
+// console.assert(
+//   kyberCCAKEMDecrypt(secretKey, cipherText) === sharedSecret,
+//   'Shared secret does not match'
+// );
 
 console.log(
   'CIPHERTEXT',
