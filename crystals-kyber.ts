@@ -323,14 +323,19 @@ function encode(B: Uint16Array[]): Uint8Array {
   return output;
 }
 
-// Generate key pair. Output is a tuple of secret key and public key.
-const SYMBYTES = 32 as const;
-export function kyberCPAPKEKeyGen() {
-  // Generate random bytes for seed
-  const randomBytes = Buffer.alloc(SYMBYTES);
-  for (let i = 0; i < SYMBYTES; i++) {
+function getRandomBytes(len: number): Buffer {
+  const randomBytes = Buffer.alloc(len);
+  for (let i = 0; i < len; i++) {
     randomBytes[i] = Math.floor(Math.random() * 256); // TODO: Requires a safer random number generator
   }
+  return randomBytes;
+}
+
+// Generate key pair. Output is a tuple of secret key and public key.
+const SYMBYTES = 32 as const;
+function kyberCPAPKEKeyGen() {
+  // Generate random bytes for seed
+  const randomBytes = getRandomBytes(SYMBYTES);
   const G = new SHA3(512);
   const seed = Buffer.alloc(SYMBYTES * 2);
   G.update(randomBytes).digest({
@@ -360,7 +365,7 @@ export function kyberCPAPKEKeyGen() {
   numberTheoreticTransformInPlace(s);
   numberTheoreticTransformInPlace(e);
 
-  const t = applyMatrix(A, s, Params[selectedParamSet].k);
+  const t = applyMatrix(A, s, Params[selectedParamSet].k); // t = A o s
   addPolynomialVectors(t, t, e);
   applyBarrettReductionToVectorInPlace(t);
 
@@ -373,13 +378,31 @@ export function kyberCPAPKEKeyGen() {
   return { secretKey, publicKey };
 }
 
+function kyberCCAKEMKeyGen() {
+  const { publicKey, secretKey: secretKeySeed } = kyberCPAPKEKeyGen();
+  const randomBytes = getRandomBytes(SYMBYTES);
+  const H = new SHA3(256);
+  const hashedPublicKey = H.update(Buffer.from(publicKey)).digest({
+    format: 'binary',
+    buffer: Buffer.alloc(publicKey.length),
+  });
+  const secretKey = Uint8Array.from([
+    ...secretKeySeed,
+    ...publicKey,
+    ...hashedPublicKey,
+    ...randomBytes,
+  ]);
+
+  return { secretKey, publicKey };
+}
+
 // TODO: Exchange keys
 
 // TODO: Encrypt message with public key
 
 // TODO: Decrypt message with private key
 
-// TODO: Implement CLI
+// TODO: Implement CLI ('commander' or use parseArgs from node:util)
 const selectedParamSet: keyof typeof Params = 'Kyber512' as const;
 
-console.log(kyberCPAPKEKeyGen());
+console.log(kyberCCAKEMKeyGen());
