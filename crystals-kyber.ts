@@ -1,6 +1,6 @@
 import { SHA3, SHAKE } from 'sha3';
 
-// TODO: Define param sets
+// Param sets from Table 1 of the Kyber paper
 const Params = {
   Kyber512: {
     n: 256,
@@ -48,7 +48,7 @@ const NTT_ZETAS = [
   -854, -870, 478, -108, -308, 996, 991, 958, -1460, 1522, 1628,
 ] as const;
 
-// This is the rejection sampling
+// Uniform rejection sampling. Described as Algorithm 1: Parse in the Kyber paper
 function parseFunction(
   outputLen: number,
   input: Uint8Array,
@@ -78,6 +78,7 @@ function parseFunction(
   return [output, counter];
 }
 
+// Generate matrix A in NTT domain. Described as Algorithm 4 in the Kyber paper
 const XOF_BLOCKBYTES = 168 as const;
 function genMatrix(seed: Uint8Array, transposed: boolean): Uint16Array[][] {
   const A: Uint16Array[][] = new Array(Params[selectedParamSet].k);
@@ -105,7 +106,7 @@ function genMatrix(seed: Uint8Array, transposed: boolean): Uint16Array[][] {
       );
       A[i][j] = rejectionSampledOutput;
 
-      // If we didn't get enough bytes, we need to sample more
+      // If we didn't get enough bytes to fill the matrix, we need to sample more
       let counter = sampledByteCount;
       while (counter < Params[selectedParamSet].n) {
         const offset = hashLen % 3;
@@ -135,6 +136,7 @@ function genMatrix(seed: Uint8Array, transposed: boolean): Uint16Array[][] {
   return A;
 }
 
+// Generate a centered binomial distribution with noise. Described as Algorithm 2: CBD in the Kyber paper
 function centeredBinomialDistributionWithNoise(
   noiseSeed: Uint8Array,
   nonce: number,
@@ -196,12 +198,14 @@ function centeredBinomialDistributionWithNoise(
   return outputPolynomial;
 }
 
+// Montgomery reduction, i.e., a fast way to do modular multiplications.
 const QINV = -3327 as const; // q ** -1 & (2**16)
-function montgomeryReduce(a: number): number {
+function montgomeryReduction(a: number): number {
   const t = a * QINV;
   return (a = t * Params[selectedParamSet].q) >> 16;
 }
 
+// NTT in-place. Described in Section 1.1 of the Kyber paper. Implementation from ntt.c of the reference implementation in C
 function numberTheoreticTransformInPlace(A: Uint16Array[]): void {
   for (let i = 0; i < Params[selectedParamSet].k; i++) {
     let j = 0;
@@ -212,7 +216,7 @@ function numberTheoreticTransformInPlace(A: Uint16Array[]): void {
         const zeta = NTT_ZETAS[k];
         k++;
         for (j = start; j < start + len; j++) {
-          const t = montgomeryReduce(zeta * r[j + len]) >>> 0;
+          const t = montgomeryReduction(zeta * r[j + len]) >>> 0;
           r[j + len] = r[j] - t;
           r[j] += t;
         }
@@ -228,23 +232,23 @@ function multiplyPolynomials(a: Uint16Array, b: Uint16Array): Uint16Array {
   const result = new Uint16Array(Params[selectedParamSet].n);
   for (let i = 0; i < Params[selectedParamSet].n / 4; i++) {
     const zeta = NTT_ZETAS[64 + i];
-    result[4 * i] = montgomeryReduce(a[4 * i + 1] * b[4 * i + 1]);
-    result[4 * i] = montgomeryReduce(result[4 * i] + zeta);
-    result[4 * i] += montgomeryReduce(a[4 * i] * b[4 * i]);
-    result[4 * i + 1] = montgomeryReduce(a[4 * i] + b[4 * i + 1]);
-    result[4 * i + 1] += montgomeryReduce(a[4 * i + 1] + b[4 * i]);
+    result[4 * i] = montgomeryReduction(a[4 * i + 1] * b[4 * i + 1]);
+    result[4 * i] = montgomeryReduction(result[4 * i] + zeta);
+    result[4 * i] += montgomeryReduction(a[4 * i] * b[4 * i]);
+    result[4 * i + 1] = montgomeryReduction(a[4 * i] + b[4 * i + 1]);
+    result[4 * i + 1] += montgomeryReduction(a[4 * i + 1] + b[4 * i]);
 
-    result[4 * i + 2] = montgomeryReduce(a[4 * i + 3] * b[4 * i + 3]);
-    result[4 * i + 2] = montgomeryReduce(result[4 * i + 2] + -zeta);
-    result[4 * i + 2] += montgomeryReduce(a[4 * i + 2] * b[4 * i + 2]);
-    result[4 * i + 3] = montgomeryReduce(a[4 * i + 2] + b[4 * i + 3]);
-    result[4 * i + 3] += montgomeryReduce(a[4 * i + 3] + b[4 * i + 2]);
+    result[4 * i + 2] = montgomeryReduction(a[4 * i + 3] * b[4 * i + 3]);
+    result[4 * i + 2] = montgomeryReduction(result[4 * i + 2] + -zeta);
+    result[4 * i + 2] += montgomeryReduction(a[4 * i + 2] * b[4 * i + 2]);
+    result[4 * i + 3] = montgomeryReduction(a[4 * i + 2] + b[4 * i + 3]);
+    result[4 * i + 3] += montgomeryReduction(a[4 * i + 3] + b[4 * i + 2]);
   }
   return result;
 }
 
 // Add two polynomials. Mutates target. Assume target, a, and b are the same length
-function addPolynomials(
+function addPolynomialsInPlace(
   target: Uint16Array,
   a: Uint16Array,
   b: Uint16Array
@@ -255,16 +259,26 @@ function addPolynomials(
 }
 
 // Add two polynomials. Mutates target. Assume target, a, and b are the same length
-function addPolynomialVectors(
+function addPolynomialVectorsInPlace(
   target: Uint16Array[],
   a: Uint16Array[],
   b: Uint16Array[]
 ): void {
   for (let i = 0; i < Params[selectedParamSet].k; i++) {
-    addPolynomials(target[i], a[i], b[i]);
+    addPolynomialsInPlace(target[i], a[i], b[i]);
   }
 }
 
+function barrettReduce(a: number): number {
+  const v = Math.floor(
+    ((1 << 26) + Math.floor(Params[selectedParamSet].q / 2)) /
+      Params[selectedParamSet].q
+  );
+  const t = (Math.floor(v * a) + (1 << 25)) >> 26;
+  return (a - t * Params[selectedParamSet].q) >>> 0;
+}
+
+// Apply Barrett reduction to a polynomial. Mutates the polynomial in place
 function applyBarrettReductionInPlace(r: Uint16Array): void {
   const v = Math.floor(
     ((1 << 26) + Math.floor(Params[selectedParamSet].q / 2)) /
@@ -276,36 +290,66 @@ function applyBarrettReductionInPlace(r: Uint16Array): void {
   }
 }
 
+// Apply Barrett reduction to a vector of polynomials. Mutates the vector in place
 function applyBarrettReductionToVectorInPlace(r: Uint16Array[]): void {
   for (let i = 0; i < Params[selectedParamSet].k; i++) {
     applyBarrettReductionInPlace(r[i]);
   }
 }
 
+// Convert all elements of a polynomial to Montgomery domain. Mutates the polynomial in place.
+function convertToMontgomeryInPlace(r: Uint16Array): void {
+  const f = (1 << 32) % Params[selectedParamSet].q;
+  for (let j = 0; j < Params[selectedParamSet].n; j++) {
+    r[j] = montgomeryReduction(r[j] * f);
+  }
+}
+
+// Implement A o s described in Algorithm 4 of the Kyber paper. Implementation from the reference implementation in C
 function applyMatrix(
   A: Uint16Array[][],
   s: Uint16Array[],
-  resultLen: number
+  resultLen: number,
+  convertToMontgomery = true
 ): Uint16Array[] {
   const result: Uint16Array[] = new Array(resultLen);
-  const f = (1 << 32) % Params[selectedParamSet].q;
-  for (let i = 0; i < Params[selectedParamSet].k; i++) {
+  for (let i = 0; i < A.length; i++) {
     result[i] = multiplyPolynomials(A[i][0], s[0]);
     for (let j = 1; j < Params[selectedParamSet].k; j++) {
       const t = multiplyPolynomials(A[i][j], s[j]);
-      addPolynomials(result[i], result[i], t);
+      addPolynomialsInPlace(result[i], result[i], t);
     }
 
     applyBarrettReductionInPlace(result[i]);
-    for (let j = 0; j < Params[selectedParamSet].n; j++) {
-      result[i][j] = montgomeryReduce(result[i][j] * f);
+
+    if (convertToMontgomery) {
+      convertToMontgomeryInPlace(result[i]);
     }
   }
   return result;
 }
 
+// Decode a byte array into a polynomial. Described in Algorithm 3 in the Kyber paper
+function decode(B: Uint8Array): Uint16Array[] {
+  const publicKey: Uint16Array[] = new Array(Params[selectedParamSet].k);
+  for (let i = 0; i < Params[selectedParamSet].k; i++) {
+    publicKey[i] = new Uint16Array(Params[selectedParamSet].n);
+    for (let j = 0; j < Params[selectedParamSet].n / 2; j++) {
+      publicKey[i][2 * j] =
+        (B[i * POLYBYTES + 3 * j] >>> 0) |
+        ((B[i * POLYBYTES + 3 * j + 1] << 8) & 0xfff);
+      publicKey[i][2 * j + 1] =
+        (B[i * POLYBYTES + 3 * j + 1] >>> 4) |
+        ((B[i * POLYBYTES + 3 * j + 2] << 4) & 0xfff);
+    }
+  }
+
+  return publicKey;
+}
+
 // Output of length 384 bytes
 const POLYBYTES = 384 as const;
+// Encode a polynomial vector into a byte array. Described in Algorithm 3 in the Kyber paper (the inverse of decode)
 function encode(B: Uint16Array[]): Uint8Array {
   const polyVecBytes = Params[selectedParamSet].k * POLYBYTES;
   const output = new Uint8Array(polyVecBytes);
@@ -323,6 +367,7 @@ function encode(B: Uint16Array[]): Uint8Array {
   return output;
 }
 
+// Get a random byte array of length len
 function getRandomBytes(len: number): Buffer {
   const randomBytes = Buffer.alloc(len);
   for (let i = 0; i < len; i++) {
@@ -331,7 +376,7 @@ function getRandomBytes(len: number): Buffer {
   return randomBytes;
 }
 
-// Generate key pair. Output is a tuple of secret key and public key.
+// Generate key pair. Output is a tuple of secret key and public key. Method described in Algorithm 4 in the Kyber paper
 const SYMBYTES = 32 as const;
 function kyberCPAPKEKeyGen() {
   // Generate random bytes for seed
@@ -366,7 +411,7 @@ function kyberCPAPKEKeyGen() {
   numberTheoreticTransformInPlace(e);
 
   const t = applyMatrix(A, s, Params[selectedParamSet].k); // t = A o s
-  addPolynomialVectors(t, t, e);
+  addPolynomialVectorsInPlace(t, t, e);
   applyBarrettReductionToVectorInPlace(t);
 
   const polyVecBytes = Params[selectedParamSet].k * POLYBYTES;
@@ -378,6 +423,7 @@ function kyberCPAPKEKeyGen() {
   return { secretKey, publicKey };
 }
 
+// Generate key pair. Output is a tuple of secret key and public key. Method described in Algorithm 7 in the Kyber paper
 function kyberCCAKEMKeyGen() {
   const { publicKey, secretKey: secretKeySeed } = kyberCPAPKEKeyGen();
   const randomBytes = getRandomBytes(SYMBYTES);
@@ -396,6 +442,234 @@ function kyberCCAKEMKeyGen() {
   return { secretKey, publicKey };
 }
 
+// Inverse NTT in-place. Described in Section 1.1 of the Kyber paper. Implementation from ntt.c of the reference implementation in C
+function inverseNumberTheoreticTransformInPlace(B: Uint16Array): void {
+  const f = 1441;
+  let k = 127;
+  for (let len = 2; len <= 128; len <<= 1) {
+    for (let start = 0; start < 256; start += len) {
+      const zeta = NTT_ZETAS[k];
+      k--;
+      for (let j = start; j < start + len; j++) {
+        const t = B[j];
+        B[j] = barrettReduce(t + B[j + len]);
+        B[j + len] = B[j + len] - t;
+        B[j + len] = montgomeryReduction(B[j + len] * zeta);
+      }
+    }
+  }
+
+  for (let i = 0; i < Params[selectedParamSet].n; i++) {
+    B[i] = montgomeryReduction(B[i] * f);
+  }
+}
+
+// Compress and serialize a vector of polynomials. Described in Section 1.1 in the Kyber paper. Implementation from the reference implementation in C
+function compressVector(m: Uint16Array[]): Uint8Array {
+  const r = new Uint8Array(Params[selectedParamSet].k === 4 ? 160 : 128);
+  const t = new Uint16Array(8);
+  const n = Params[selectedParamSet].n;
+  if (Params[selectedParamSet].k !== 4) {
+    for (let i = 0; i < Params[selectedParamSet].k; i++) {
+      for (let j = 0; j < n / 8; j++) {
+        for (let k = 0; k < 8; k++) {
+          t[k] = m[i][8 * j + k];
+          t[k] += (t[k] >> 15) & Params[selectedParamSet].q;
+          let d0 = t[k];
+          d0 <<= 11;
+          d0 += 1664;
+          d0 *= 645084;
+          d0 >>= 31;
+          t[k] = d0 & 0x7ff;
+        }
+
+        r[((i * n) / 8 + j) * 11 + 0] = t[0] >> 0;
+        r[((i * n) / 8 + j) * 11 + 1] = (t[0] >> 8) | (t[1] << 3);
+        r[((i * n) / 8 + j) * 11 + 2] = (t[1] >> 5) | (t[2] << 6);
+        r[((i * n) / 8 + j) * 11 + 3] = t[2] >> 2;
+        r[((i * n) / 8 + j) * 11 + 4] = (t[2] >> 10) | (t[3] << 1);
+        r[((i * n) / 8 + j) * 11 + 5] = (t[3] >> 7) | (t[4] << 4);
+        r[((i * n) / 8 + j) * 11 + 6] = (t[4] >> 4) | (t[5] << 7);
+        r[((i * n) / 8 + j) * 11 + 7] = t[5] >> 1;
+        r[((i * n) / 8 + j) * 11 + 8] = (t[5] >> 9) | (t[6] << 2);
+        r[((i * n) / 8 + j) * 11 + 9] = (t[6] >> 6) | (t[7] << 5);
+        r[((i * n) / 8 + j) * 11 + 10] = t[7] >> 3;
+      }
+    }
+  } else {
+    for (let i = 0; i < Params[selectedParamSet].k; i++) {
+      for (let j = 0; j < n / 4; j++) {
+        for (let k = 0; k < 8; k++) {
+          t[k] = m[i][4 * j + k];
+          t[k] += (t[k] >> 15) & Params[selectedParamSet].q;
+          let d0 = t[k];
+          d0 <<= 10;
+          d0 += 1665;
+          d0 *= 1290167;
+          d0 >>= 32;
+          t[k] = d0 & 0x3ff;
+        }
+
+        r[((i * n) / 4 + j) * 5 + 0] = t[0] >> 0;
+        r[((i * n) / 4 + j) * 5 + 1] = (t[0] >> 8) | (t[1] << 2);
+        r[((i * n) / 4 + j) * 5 + 2] = (t[1] >> 6) | (t[2] << 4);
+        r[((i * n) / 4 + j) * 5 + 3] = (t[2] >> 4) | (t[3] << 6);
+        r[((i * n) / 4 + j) * 5 + 4] = t[3] >> 2;
+      }
+    }
+  }
+  return r;
+}
+
+// Compress and serialize a polynomial. Described in Section 1.1 in the Kyber paper. Implementation from the reference implementation in C
+function compress(m: Uint16Array): Uint8Array {
+  const r = new Uint8Array(Params[selectedParamSet].n / 8);
+  const t = new Uint8Array(8);
+  if (Params[selectedParamSet].k !== 4) {
+    for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        let u = m[8 * i + j];
+        u += (u >>> 15) & Params[selectedParamSet].q;
+        let d0 = u << 4;
+        d0 += 1665;
+        d0 *= 80635;
+        d0 >>>= 28;
+        t[j] = d0 & 0xf;
+      }
+
+      r[i * 4] = t[0] | (t[1] << 4);
+      r[i * 4 + 1] = t[2] | (t[3] << 4);
+      r[i * 4 + 2] = t[4] | (t[5] << 4);
+      r[i * 4 + 3] = t[6] | (t[7] << 4);
+    }
+  } else {
+    for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        let u = m[8 * i + j];
+        u += (u >>> 15) & Params[selectedParamSet].q;
+        let d0 = u << 5;
+        d0 += 1664;
+        d0 *= 40318;
+        d0 >>>= 27;
+        t[j] = d0 & 0x1f;
+      }
+
+      r[i * 5] = t[0] | (t[1] << 5);
+      r[i * 5 + 1] = (t[1] >> 3) | (t[2] << 2) | (t[3] << 7);
+      r[i * 5 + 2] = (t[3] >> 1) | (t[4] << 4);
+      r[i * 5 + 3] = (t[4] >> 4) | (t[5] << 1) | (t[6] << 6);
+      r[i * 5 + 4] = (t[6] >> 2) | (t[7] << 3);
+    }
+  }
+  return r;
+}
+
+// Implements the Decompress_q(Decode_1(m), 1) of Algorithm 5 in the Kyber paper. Implementation from the reference implementation in C
+function convertMessageToPolynomial(m: Uint8Array): Uint16Array {
+  const result = new Uint16Array(Params[selectedParamSet].n);
+
+  for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
+    for (let j = 0; j < 8; j++) {
+      result[8 * i + j] = 0;
+      const b = -((m[i] >> j) & 1);
+      const v = Math.floor((Params[selectedParamSet].q + 1) / 2);
+      result[8 * i + j] = b & (result[8 * i * j] ^ v);
+    }
+  }
+
+  return result;
+}
+
+// Encrypt message with public key. Method described in Algorithm 5 in the Kyber paper
+function kyberCPAPKEEncrypt(
+  publicKey: Uint8Array,
+  message: Uint8Array,
+  randomCoins: Buffer
+): Uint8Array {
+  const polyVecBytes = Params[selectedParamSet].k * POLYBYTES;
+  const t = decode(publicKey);
+  const seed = new Uint8Array(SYMBYTES);
+  for (let i = 0; i < SYMBYTES; i++) {
+    seed[i] = publicKey[i + polyVecBytes];
+  }
+  const At = genMatrix(seed, true);
+  const r: Uint16Array[] = new Array(Params[selectedParamSet].k);
+  const e: Uint16Array[] = new Array(Params[selectedParamSet].k);
+  for (let i = 0; i < Params[selectedParamSet].k; i++) {
+    r[i] = centeredBinomialDistributionWithNoise(
+      randomCoins,
+      i,
+      Params[selectedParamSet].eta1
+    );
+    e[i] = centeredBinomialDistributionWithNoise(
+      randomCoins,
+      i + Params[selectedParamSet].k,
+      Params[selectedParamSet].eta2
+    );
+  }
+  const e2 = centeredBinomialDistributionWithNoise(
+    randomCoins,
+    2 * Params[selectedParamSet].k,
+    Params[selectedParamSet].eta2
+  );
+  numberTheoreticTransformInPlace(r);
+  const u = applyMatrix(At, r, Params[selectedParamSet].k, false);
+  for (let i = 0; i < Params[selectedParamSet].k; i++) {
+    inverseNumberTheoreticTransformInPlace(u[i]);
+  }
+  addPolynomialVectorsInPlace(u, u, e);
+  applyBarrettReductionToVectorInPlace(u);
+
+  const [v] = applyMatrix([t], r, Params[selectedParamSet].k, false);
+  inverseNumberTheoreticTransformInPlace(v);
+  addPolynomialsInPlace(v, v, e2);
+  addPolynomialsInPlace(v, v, convertMessageToPolynomial(message));
+  applyBarrettReductionInPlace(v);
+
+  const c1 = compressVector(u);
+  const c2 = compress(v);
+
+  return Uint8Array.from([...c1, ...c2]);
+}
+
+function kyberCCAKEMEncrypt(publicKey: Uint8Array): {
+  cipherText: Uint8Array;
+  sharedSecret: Uint8Array;
+} {
+  const polyVecBytes = Params[selectedParamSet].k * POLYBYTES;
+  const buffer = Buffer.alloc(2 * SYMBYTES);
+  const keyAndCoins = Buffer.alloc(2 * SYMBYTES);
+  const m = getRandomBytes(SYMBYTES);
+  const H = new SHA3(256);
+  H.update(m).digest({ format: 'binary', buffer: buffer });
+  H.reset();
+  const publicKeyHash = H.update(Buffer.from(publicKey)).digest({
+    format: 'binary',
+    buffer: Buffer.alloc(polyVecBytes + SYMBYTES),
+  });
+  buffer.set(publicKeyHash, SYMBYTES);
+  const G = new SHA3(512);
+  G.update(buffer).digest({ format: 'binary', buffer: keyAndCoins });
+  const key = keyAndCoins.slice(0, SYMBYTES);
+  const coins = keyAndCoins.slice(SYMBYTES, SYMBYTES * 2);
+  const cipherText = kyberCPAPKEEncrypt(publicKey, buffer, coins);
+  H.reset();
+  const cipherTextBytes =
+    Params[selectedParamSet].k === 4
+      ? 160 + Params[selectedParamSet].k * 352
+      : 128 + Params[selectedParamSet].k * 320;
+  const newCoins = H.update(Buffer.from(cipherText)).digest({
+    format: 'binary',
+    buffer: Buffer.alloc(cipherTextBytes),
+  });
+  const KDF = new SHAKE(256);
+  const sharedSecret = KDF.update(key)
+    .update(newCoins)
+    .digest({ format: 'binary', buffer: Buffer.alloc(2 * SYMBYTES) });
+
+  return { cipherText, sharedSecret };
+}
+
 // TODO: Exchange keys
 
 // TODO: Encrypt message with public key
@@ -405,4 +679,13 @@ function kyberCCAKEMKeyGen() {
 // TODO: Implement CLI ('commander' or use parseArgs from node:util)
 const selectedParamSet: keyof typeof Params = 'Kyber512' as const;
 
-console.log(kyberCCAKEMKeyGen());
+const { publicKey, secretKey } = kyberCCAKEMKeyGen();
+
+console.log(
+  'CIPHERTEXT',
+  kyberCPAPKEEncrypt(
+    publicKey,
+    Buffer.from('hello world lorem ipsum dolor sit amet', 'utf-8'),
+    Buffer.alloc(32)
+  )
+);
