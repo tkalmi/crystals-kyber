@@ -471,6 +471,7 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
   const r = new Uint8Array(Params[selectedParamSet].k === 4 ? 160 : 128);
   const t = new Uint16Array(8);
   const n = Params[selectedParamSet].n;
+  let rPos = 0;
   if (Params[selectedParamSet].k !== 4) {
     for (let i = 0; i < Params[selectedParamSet].k; i++) {
       for (let j = 0; j < n / 8; j++) {
@@ -485,17 +486,19 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
           t[k] = d0 & 0x7ff;
         }
 
-        r[((i * n) / 8 + j) * 11 + 0] = t[0] >> 0;
-        r[((i * n) / 8 + j) * 11 + 1] = (t[0] >> 8) | (t[1] << 3);
-        r[((i * n) / 8 + j) * 11 + 2] = (t[1] >> 5) | (t[2] << 6);
-        r[((i * n) / 8 + j) * 11 + 3] = t[2] >> 2;
-        r[((i * n) / 8 + j) * 11 + 4] = (t[2] >> 10) | (t[3] << 1);
-        r[((i * n) / 8 + j) * 11 + 5] = (t[3] >> 7) | (t[4] << 4);
-        r[((i * n) / 8 + j) * 11 + 6] = (t[4] >> 4) | (t[5] << 7);
-        r[((i * n) / 8 + j) * 11 + 7] = t[5] >> 1;
-        r[((i * n) / 8 + j) * 11 + 8] = (t[5] >> 9) | (t[6] << 2);
-        r[((i * n) / 8 + j) * 11 + 9] = (t[6] >> 6) | (t[7] << 5);
-        r[((i * n) / 8 + j) * 11 + 10] = t[7] >> 3;
+        r[rPos + 0] = t[0] >> 0;
+        r[rPos + 1] = (t[0] >> 8) | (t[1] << 3);
+        r[rPos + 2] = (t[1] >> 5) | (t[2] << 6);
+        r[rPos + 3] = t[2] >> 2;
+        r[rPos + 4] = (t[2] >> 10) | (t[3] << 1);
+        r[rPos + 5] = (t[3] >> 7) | (t[4] << 4);
+        r[rPos + 6] = (t[4] >> 4) | (t[5] << 7);
+        r[rPos + 7] = t[5] >> 1;
+        r[rPos + 8] = (t[5] >> 9) | (t[6] << 2);
+        r[rPos + 9] = (t[6] >> 6) | (t[7] << 5);
+        r[rPos + 10] = t[7] >> 3;
+
+        rPos += 11;
       }
     }
   } else {
@@ -512,11 +515,13 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
           t[k] = d0 & 0x3ff;
         }
 
-        r[((i * n) / 4 + j) * 5 + 0] = t[0] >> 0;
-        r[((i * n) / 4 + j) * 5 + 1] = (t[0] >> 8) | (t[1] << 2);
-        r[((i * n) / 4 + j) * 5 + 2] = (t[1] >> 6) | (t[2] << 4);
-        r[((i * n) / 4 + j) * 5 + 3] = (t[2] >> 4) | (t[3] << 6);
-        r[((i * n) / 4 + j) * 5 + 4] = t[3] >> 2;
+        r[rPos + 0] = t[0] >> 0;
+        r[rPos + 1] = (t[0] >> 8) | (t[1] << 2);
+        r[rPos + 2] = (t[1] >> 6) | (t[2] << 4);
+        r[rPos + 3] = (t[2] >> 4) | (t[3] << 6);
+        r[rPos + 4] = t[3] >> 2;
+
+        rPos += 5;
       }
     }
   }
@@ -682,9 +687,140 @@ function kyberCCAKEMEncrypt(publicKey: Uint8Array): {
   return { cipherText, sharedSecret };
 }
 
-// TODO: Exchange keys
+function decompressPolynomialVector(a: Uint8Array): Uint16Array[] {
+  const result = new Array(Params[selectedParamSet].k);
+  let aPos = 0;
+  if (Params[selectedParamSet].k === 4) {
+    const t = new Uint16Array(8);
+    for (let i = 0; i < Params[selectedParamSet].k; i++) {
+      result[i] = new Uint16Array(Params[selectedParamSet].n);
+      for (let j = 0; j < Params[selectedParamSet].n / 8; j++) {
+        t[0] = a[aPos + 0] | (a[aPos + 1] << 8);
+        t[1] = (a[aPos + 1] >> 3) | (a[aPos + 2] << 5);
+        t[2] = (a[aPos + 2] >> 6) | (a[aPos + 3] << 2) | (a[aPos + 4] << 10);
+        t[3] = (a[aPos + 4] >> 1) | (a[aPos + 5] << 7);
+        t[4] = (a[aPos + 5] >> 4) | (a[aPos + 6] << 4);
+        t[5] = (a[aPos + 6] >> 7) | (a[aPos + 7] << 1) | (a[aPos + 8] << 9);
+        t[6] = (a[aPos + 8] >> 2) | (a[aPos + 9] << 6);
+        t[7] = (a[aPos + 9] >> 5) | (a[aPos + 10] << 3);
+        aPos += 11;
+
+        for (let k = 0; k < 8; k++) {
+          result[i][8 * j + k] =
+            ((t[k] & 0x7ff) * Params[selectedParamSet].q + 1024) >> 11;
+        }
+      }
+    }
+  } else {
+    const t = new Uint16Array(4);
+    for (let i = 0; i < Params[selectedParamSet].k; i++) {
+      result[i] = new Uint16Array(Params[selectedParamSet].n);
+      for (let j = 0; j < Params[selectedParamSet].n / 4; j++) {
+        t[0] = a[aPos + 0] | (a[aPos + 1] << 8);
+        t[1] = (a[aPos + 1] >> 2) | (a[aPos + 2] << 6);
+        t[2] = (a[aPos + 2] >> 4) | (a[aPos + 3] << 4);
+        t[3] = (a[aPos + 3] >> 6) | (a[aPos + 4] << 2);
+        aPos += 5;
+
+        for (let k = 0; k < 4; k++) {
+          result[i][4 * j + k] =
+            ((t[k] & 0x3ff) * Params[selectedParamSet].q + 512) >> 10;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+function decompressPolynomial(a: Uint8Array): Uint16Array {
+  const result = new Uint16Array(Params[selectedParamSet].n);
+
+  let aPos = 0;
+  if (Params[selectedParamSet].k === 4) {
+    const t = new Uint8Array(8);
+    for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
+      t[0] = a[aPos];
+      t[1] = (a[aPos] >> 5) | (a[1] << 3);
+      t[2] = a[aPos + 1] >> 2;
+      t[3] = (a[aPos + 1] >> 7) | (a[aPos + 2] << 1);
+      t[4] = (a[aPos + 2] >> 4) | (a[aPos + 3] << 4);
+      t[5] = a[aPos + 3] >> 1;
+      t[6] = (a[aPos + 3] >> 6) | (a[aPos + 4] << 2);
+      t[7] = a[aPos + 4] >> 3;
+      aPos += 5;
+
+      for (let j = 0; j < 8; j++) {
+        result[8 * i + j] =
+          ((t[j] & 31) * Params[selectedParamSet].q + 16) >> 5;
+      }
+    }
+  } else {
+    for (let i = 0; i < Params[selectedParamSet].n / 2; i++) {
+      result[2 * i] = ((a[aPos] & 15) * Params[selectedParamSet].q + 8) >> 4;
+      result[2 * i + 1] =
+        ((a[aPos] >> 4) * Params[selectedParamSet].q + 8) >> 4;
+      aPos++;
+    }
+  }
+
+  return result;
+}
+
+function subtractPolynomialsInPlace(
+  target: Uint16Array,
+  a: Uint16Array,
+  b: Uint16Array
+): void {
+  for (let i = 0; i < Params[selectedParamSet].n; i++) {
+    target[i] = a[i] - b[i];
+  }
+}
+
+function convertPolynomialToMessage(a: Uint16Array): Uint8Array {
+  const result = new Uint8Array(SYMBYTES);
+  for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
+    result[i] = 0;
+    for (let j = 0; j < 8; j++) {
+      let t = a[8 * i + j];
+      t <<= 1;
+      t += 1665;
+      t *= 80635;
+      t >>= 28;
+      t &= 1;
+      result[i] |= t << j;
+    }
+  }
+
+  return result;
+}
 
 // TODO: Decrypt message with private key
+function kyberCPAPKEDecrypt(
+  secretKey: Uint8Array,
+  cipherText: Uint8Array
+): Uint8Array {
+  const u = decompressPolynomialVector(cipherText);
+  const POLYVECCOMPRESSEDBYTES = Params[selectedParamSet].k === 4 ? 352 : 320;
+  const v = decompressPolynomial(
+    cipherText.slice(Params[selectedParamSet].k * POLYVECCOMPRESSEDBYTES)
+  );
+  const s = decode(secretKey);
+
+  numberTheoreticTransformInPlace(u);
+  const [mp] = multiplyPolynomialMatrixAndVector(
+    [s],
+    u,
+    Params[selectedParamSet].k,
+    false
+  );
+  inverseNumberTheoreticTransformInPlace(mp);
+
+  subtractPolynomialsInPlace(mp, v, mp);
+  applyBarrettReductionToPolynomialInPlace(mp);
+
+  return convertPolynomialToMessage(mp);
+}
 
 // TODO: Implement CLI ('commander' or use parseArgs from node:util)
 // This is a KEM algorithm. So, you create a random key pair (public and private key), and then send the public key to the other party. The other party uses the public key to create a shared secret and a cipher text (i.e,. the shared secret in an encrypted form). The other party sends the cipher text back to the first party. The first party uses their private key to decrypt the cipher text and get the shared secret. Now both parties have the shared secret -- this can be used as a symmetric key for encryption/decryption (e.g., with AES).
@@ -697,12 +833,3 @@ const { publicKey, secretKey } = kyberCCAKEMKeyGen();
 //   kyberCCAKEMDecrypt(secretKey, cipherText) === sharedSecret,
 //   'Shared secret does not match'
 // );
-
-console.log(
-  'CIPHERTEXT',
-  kyberCPAPKEEncrypt(
-    publicKey,
-    Buffer.from('hello world lorem ipsum dolor sit amet', 'utf-8'),
-    Buffer.alloc(32)
-  )
-);
