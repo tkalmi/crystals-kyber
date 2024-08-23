@@ -415,10 +415,6 @@ const SYMBYTES = 32 as const;
 export function kyberCPAPKEKeyGen() {
   // Generate random bytes for seed
   const randomBytes = getRandomBytes(SYMBYTES);
-  // const randomBytes = Buffer.from([
-  //   151, 190, 20, 77, 66, 83, 46, 164, 112, 202, 173, 189, 217, 250, 88, 17,
-  //   118, 39, 155, 207, 245, 181, 143, 5, 177, 167, 5, 158, 92, 106, 30, 112,
-  // ]);
   const G = new SHA3(512);
   const seed = Buffer.alloc(SYMBYTES * 2);
   G.update(randomBytes).digest({
@@ -470,10 +466,6 @@ export function kyberCPAPKEKeyGen() {
 function kyberCCAKEMKeyGen() {
   const { publicKey, secretKey: secretKeySeed } = kyberCPAPKEKeyGen();
   const randomBytes = getRandomBytes(SYMBYTES);
-  // const randomBytes = Buffer.from([
-  //   151, 190, 20, 77, 66, 83, 46, 164, 112, 202, 173, 189, 217, 250, 88, 17,
-  //   118, 39, 155, 207, 245, 181, 143, 5, 177, 167, 5, 158, 92, 106, 30, 112,
-  // ]);
   const H = new SHA3(256);
   const hashedPublicKey = H.update(Buffer.from(publicKey)).digest({
     format: 'binary',
@@ -688,10 +680,6 @@ function kyberCCAKEMEncrypt(publicKey: Uint8Array): {
   const buffer = Buffer.alloc(2 * SYMBYTES);
   const keyAndCoins = Buffer.alloc(2 * SYMBYTES);
   const m = getRandomBytes(SYMBYTES);
-  // const m = Buffer.from([
-  //   151, 190, 20, 77, 66, 83, 46, 164, 112, 202, 173, 189, 217, 250, 88, 17,
-  //   118, 39, 155, 207, 245, 181, 143, 5, 177, 167, 5, 158, 92, 106, 30, 112,
-  // ]);
   const H = new SHA3(256);
   H.update(m).digest({ format: 'binary', buffer: buffer });
   H.reset();
