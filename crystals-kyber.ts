@@ -10,7 +10,6 @@ const Params = {
     eta2: 2,
     d_u: 10,
     d_v: 4,
-    delta: 2 ** -129,
   },
   Kyber768: {
     n: 256,
@@ -20,7 +19,6 @@ const Params = {
     eta2: 2,
     d_u: 10,
     d_v: 4,
-    delta: 2 ** -164,
   },
   Kyber1024: {
     n: 256,
@@ -30,7 +28,6 @@ const Params = {
     eta2: 2,
     d_u: 11,
     d_v: 5,
-    delta: 2 ** -174,
   },
 } as const;
 
@@ -882,20 +879,24 @@ function kyberCCAKEMDecrypt(
 // This is a KEM algorithm. So, you create a random key pair (public and private key), and then send the public key to the other party. The other party uses the public key to create a shared secret and a cipher text (i.e,. the shared secret in an encrypted form). The other party sends the cipher text back to the first party. The first party uses their private key to decrypt the cipher text and get the shared secret. Now both parties have the shared secret -- this can be used as a symmetric key for encryption/decryption (e.g., with AES).
 let selectedParamSet: keyof typeof Params = 'Kyber512' as const;
 
-const imported = import(
-  './og-kyber/crystals-kyber-ts/src/services/kyber512.service'
-).then(({ Kyber512Service }) => {
-  const Instance = new Kyber512Service();
-
-  const { publicKey: publicKeyU, secretKey: secretKeyU } = kyberCCAKEMKeyGen();
-  const publicKey = Array.from(publicKeyU);
-  const secretKey = Array.from(secretKeyU);
-
-  // Test on yourself
-  for (const paramSet of ['Kyber512', 'Kyber768', 'Kyber1024'] as const) {
+for (const [paramSet, path] of [
+  ['Kyber512', './og-kyber/crystals-kyber-ts/src/services/kyber512.service'],
+  ['Kyber768', './og-kyber/crystals-kyber-ts/src/services/kyber768.service'],
+  ['Kyber1024', './og-kyber/crystals-kyber-ts/src/services/kyber1024.service'],
+] as const) {
+  import(path).then((imported) => {
+    const KyberService = imported[`${paramSet}Service`];
+    // Test on yourself
     console.log('\nTesting with', paramSet);
     console.log('\n----------------------\n');
     selectedParamSet = paramSet as keyof typeof Params;
+
+    const Instance = new KyberService();
+    const { publicKey: publicKeyU, secretKey: secretKeyU } =
+      kyberCCAKEMKeyGen();
+    const publicKey = Array.from(publicKeyU);
+    const secretKey = Array.from(secretKeyU);
+
     console.log('Test: Can decrypt its own message');
     const { cipherText, sharedSecret } = kyberCCAKEMEncrypt(publicKeyU);
     const decrypted = kyberCCAKEMDecrypt(secretKeyU, cipherText);
@@ -942,5 +943,5 @@ const imported = import(
       'could not do it'
     );
     console.log('Success!');
-  }
-});
+  });
+}
