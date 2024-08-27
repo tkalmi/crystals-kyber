@@ -758,12 +758,12 @@ function decompressPolynomial(a: Uint8Array): Uint16Array {
     const t = new Uint8Array(8);
     for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
       t[0] = a[aPos];
-      t[1] = (a[aPos] >> 5) | (a[1] << 3);
+      t[1] = toChar(a[aPos] >> 5) | toChar(a[aPos + 1] << 3);
       t[2] = a[aPos + 1] >> 2;
-      t[3] = (a[aPos + 1] >> 7) | (a[aPos + 2] << 1);
-      t[4] = (a[aPos + 2] >> 4) | (a[aPos + 3] << 4);
+      t[3] = toChar(a[aPos + 1] >> 7) | toChar(a[aPos + 2] << 1);
+      t[4] = toChar(a[aPos + 2] >> 4) | toChar(a[aPos + 3] << 4);
       t[5] = a[aPos + 3] >> 1;
-      t[6] = (a[aPos + 3] >> 6) | (a[aPos + 4] << 2);
+      t[6] = toChar(a[aPos + 3] >> 6) | toChar(a[aPos + 4] << 2);
       t[7] = a[aPos + 4] >> 3;
       aPos += 5;
 
