@@ -299,7 +299,7 @@ function addPolynomialVectorsInPlace(
 function barrettReduce(a: number): number {
   const aInt16 = toInt16(a);
   const v = 20159; // int16(((1<<26) + 3329/2)/3329)
-  let t = toInt16((v * aInt16) >> 26);
+  let t = (v * aInt16) >> 26;
   t = toInt16(t * Params[selectedParamSet].q);
   return aInt16 - t;
 }
