@@ -1,4 +1,5 @@
 import { SHA3, SHAKE } from 'sha3';
+import crypto from 'crypto';
 
 // Param sets from Table 1 of the Kyber paper
 const Params = {
@@ -441,11 +442,7 @@ function encode(B: Uint16Array[]): Uint8Array {
  * @returns random bytes in a Buffer of length len
  */
 function getRandomBytes(len: number): Buffer {
-  const randomBytes = Buffer.alloc(len);
-  for (let i = 0; i < len; i++) {
-    randomBytes[i] = Math.floor(Math.random() * 256); // TODO: Requires a safer random number generator
-  }
-  return randomBytes;
+  return crypto.randomBytes(len);
 }
 
 /**
