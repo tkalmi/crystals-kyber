@@ -517,7 +517,7 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
         for (let k = 0; k < 8; k++) {
           const x = m[i][8 * j + k];
           t[k] =
-            Math.round((2048 / Params[selectedParamSet].q) * x) >>> 0 % 2048;
+            (Math.round((2048 / Params[selectedParamSet].q) * x) >>> 0) % 2048;
         }
 
         r[rPos + 0] = t[0] >> 0;
@@ -542,7 +542,7 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
         for (let k = 0; k < 4; k++) {
           const x = m[i][4 * j + k];
           t[k] =
-            Math.round((1024 / Params[selectedParamSet].q) * x) >>> 0 % 1024;
+            (Math.round((1024 / Params[selectedParamSet].q) * x) >>> 0) % 1024;
         }
 
         r[rPos + 0] = t[0] >> 0;
@@ -578,7 +578,7 @@ function compressPolynomial(m: Uint16Array): Uint8Array {
     for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
       for (let j = 0; j < 8; j++) {
         const x = m[8 * i + j];
-        t[j] = Math.round((32 / Params[selectedParamSet].q) * x) >>> 0 % 32;
+        t[j] = (Math.round((32 / Params[selectedParamSet].q) * x) >>> 0) % 32;
       }
 
       r[i * 5] = t[0] | toChar(t[1] << 5);
