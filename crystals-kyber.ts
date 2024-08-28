@@ -96,7 +96,12 @@ function parseFunction(
   return [output, counter];
 }
 
-// Generate matrix A in NTT domain. Described as Algorithm 4 in the Kyber paper
+/**
+ * Generate matrix A in NTT domain. Described as Algorithm 4 in the Kyber paper
+ * @param seed Seed for the XOF hash function
+ * @param transposed Whether to transpose the matrix
+ * @returns A matrix in NTT domain
+ */
 const XOF_BLOCKBYTES = 168 as const;
 function genMatrix(seed: Uint8Array, transposed: boolean): Uint16Array[][] {
   const A: Uint16Array[][] = new Array(Params[selectedParamSet].k);
@@ -154,7 +159,13 @@ function genMatrix(seed: Uint8Array, transposed: boolean): Uint16Array[][] {
   return A;
 }
 
-// Generate a centered binomial distribution with noise. Described as Algorithm 2: CBD in the Kyber paper
+/**
+ * Generate a centered binomial distribution with noise. Described as Algorithm 2: CBD in the Kyber paper
+ * @param noiseSeed
+ * @param nonce
+ * @param eta
+ * @returns
+ */
 function centeredBinomialDistributionWithNoise(
   noiseSeed: Uint8Array,
   nonce: number,
@@ -216,14 +227,21 @@ function centeredBinomialDistributionWithNoise(
   return outputPolynomial;
 }
 
-// Montgomery reduction, i.e., a fast way to do modular multiplications.
+/**
+ * Montgomery reduction, i.e., a way to do modular multiplications fast and in constant time (=safe).
+ * @param a number to reduce
+ * @returns reduced number
+ */
 const QINV = 62209 as const; // ((q ** -1 & (2**16)) >>> 0) & 0xffff
 function montgomeryReduction(a: number): number {
   const t = toInt16(((a >>> 0) & 0xffff) * QINV);
   return toInt16((a - t * Params[selectedParamSet].q) >> 16);
 }
 
-// NTT in-place. Described in Section 1.1 of the Kyber paper. Implementation from ntt.c of the reference implementation in C
+/**
+ * NTT in-place. Described in Section 1.1 of the Kyber paper. Implementation from ntt.c of the reference implementation in C
+ * @param A Vector of polynomials
+ */
 function numberTheoreticTransformInPlace(A: Uint16Array[]): void {
   for (let i = 0; i < Params[selectedParamSet].k; i++) {
     let j = 0;
@@ -241,7 +259,7 @@ function numberTheoreticTransformInPlace(A: Uint16Array[]): void {
         }
       }
     }
-    applyBarrettReductionToPolynomialInPlace(r);
+    applyBarrettReductionToPolynomialInPlace(r); // Ensure all elements of t are in the range [-(q-1)/2, (q-1)/2], as defined in chapter 1.1 of the Kyber paper.
     A[i] = r;
   }
 }
@@ -274,7 +292,12 @@ function multiplyPolynomials(a: Uint16Array, b: Uint16Array): Uint16Array {
   return result;
 }
 
-// Add two polynomials. Mutates target. Assume target, a, and b are the same length
+/**
+ * Add two polynomials. Mutates target. Assume target, a, and b are the same length
+ * @param target array to store the result in
+ * @param a polynomial 1
+ * @param b polynomial 2
+ */
 function addPolynomialsInPlace(
   target: Uint16Array,
   a: Uint16Array,
@@ -296,6 +319,11 @@ function addPolynomialVectorsInPlace(
   }
 }
 
+/**
+ * Ensures that the given number is in the range [-(q-1)/2, (q-1)/2), but is faster than a mod q (and constant time, i.e., safer). Implementation from the reference implementation in C
+ * @param a number to reduce
+ * @returns reduced number
+ */
 function barrettReduce(a: number): number {
   const aInt16 = toInt16(a);
   const v = 20159; // int16(((1<<26) + 3329/2)/3329)
@@ -304,14 +332,20 @@ function barrettReduce(a: number): number {
   return aInt16 - t;
 }
 
-// Apply Barrett reduction to a polynomial. Mutates the polynomial in place
+/**
+ * Apply Barrett reduction to a polynomial. Mutates the polynomial in place
+ * @param r polynomial to reduce
+ */
 function applyBarrettReductionToPolynomialInPlace(r: Uint16Array): void {
   for (let i = 0; i < Params[selectedParamSet].n; i++) {
     r[i] = barrettReduce(r[i]);
   }
 }
 
-// Apply Barrett reduction to a vector of polynomials. Mutates the vector in place
+/**
+ * Apply Barrett reduction to a vector of polynomials. Mutates the vector in place
+ * @param r polynomial vector to reduce
+ */
 function applyBarrettReductionToPolynomialVectorInPlace(
   r: Uint16Array[]
 ): void {
@@ -320,7 +354,10 @@ function applyBarrettReductionToPolynomialVectorInPlace(
   }
 }
 
-// Convert all elements of a polynomial to Montgomery domain. Mutates the polynomial in place.
+/**
+ * Convert all elements of a polynomial to Montgomery format. Mutates the polynomial in place.
+ * @param r polynomial to convert
+ */
 function convertPolynomialToMontgomeryInPlace(r: Uint16Array): void {
   const f = 1353; // (1ULL << 32) % Params[selectedParamSet].q
   for (let j = 0; j < Params[selectedParamSet].n; j++) {
@@ -328,12 +365,17 @@ function convertPolynomialToMontgomeryInPlace(r: Uint16Array): void {
   }
 }
 
-// Implement A o s described in Algorithm 4 of the Kyber paper. Multiplies elements of A and s in NTT domain, accumulate into R and multiply by 2^-16. Implementation from the reference implementation in C.
+/**
+ * Implement A o s described in Algorithm 4 of the Kyber paper. Multiplies elements of A and s in NTT domain, accumulate into R and multiply by 2^-16. Implementation from the reference implementation in C.
+ * @param A Vector of polynomials
+ * @param s noise vector
+ * @param resultLen length of the result vector of polynomials
+ * @returns Matrix multiplied by vector in NTT domain
+ */
 function multiplyPolynomialMatrixAndVector(
   A: Uint16Array[][],
   s: Uint16Array[],
-  resultLen: number,
-  convertToMontgomery: boolean
+  resultLen: number
 ): Uint16Array[] {
   const result: Uint16Array[] = new Array(resultLen);
   for (let i = 0; i < A.length; i++) {
@@ -343,16 +385,16 @@ function multiplyPolynomialMatrixAndVector(
       addPolynomialsInPlace(result[i], result[i], t);
     }
 
-    applyBarrettReductionToPolynomialInPlace(result[i]);
-
-    if (convertToMontgomery) {
-      convertPolynomialToMontgomeryInPlace(result[i]);
-    }
+    applyBarrettReductionToPolynomialInPlace(result[i]); // Ensure all elements of t are in the range [-(q-1)/2, (q-1)/2], as defined in chapter 1.1 of the Kyber paper.
   }
   return result;
 }
 
-// Decode a byte array into a polynomial. Described in Algorithm 3 in the Kyber paper
+/**
+ * Decode a byte array into a polynomial. Described in Algorithm 3 in the Kyber paper
+ * @param B bytes to decode
+ * @returns vector of polynomials decoded from the byte array
+ */
 function decode(B: Uint8Array): Uint16Array[] {
   const publicKey: Uint16Array[] = new Array(Params[selectedParamSet].k);
   for (let i = 0; i < Params[selectedParamSet].k; i++) {
@@ -370,9 +412,12 @@ function decode(B: Uint8Array): Uint16Array[] {
   return publicKey;
 }
 
-// Output of length 384 bytes
-const POLYBYTES = 384 as const;
-// Encode a polynomial vector into a byte array. Described in Algorithm 3 in the Kyber paper (the inverse of decode)
+const POLYBYTES = 384 as const; // Output of length 384 bytes
+/**
+ * Encode a polynomial vector into a byte array. Described in Algorithm 3 in the Kyber paper (the inverse of decode). Implementation from the reference implementation in C
+ * @param B
+ * @returns
+ */
 function encode(B: Uint16Array[]): Uint8Array {
   const polyVecBytes = Params[selectedParamSet].k * POLYBYTES;
   const output = new Uint8Array(polyVecBytes);
@@ -390,7 +435,11 @@ function encode(B: Uint16Array[]): Uint8Array {
   return output;
 }
 
-// Get a random byte array of length len
+/**
+ * Get a random byte array of length len
+ * @param len length of the byte array
+ * @returns random bytes in a Buffer of length len
+ */
 function getRandomBytes(len: number): Buffer {
   const randomBytes = Buffer.alloc(len);
   for (let i = 0; i < len; i++) {
@@ -399,19 +448,21 @@ function getRandomBytes(len: number): Buffer {
   return randomBytes;
 }
 
-// Generate key pair. Output is a tuple of secret key and public key. Method described in Algorithm 4 in the Kyber paper
+/**
+ * Generate key pair. Output is a tuple of secret key and public key. Method described in Algorithm 4 in the Kyber paper
+ * @returns A tuple of secret key and public key
+ */
 const SYMBYTES = 32 as const;
 export function kyberCPAPKEKeyGen() {
   // Generate random bytes for seed
   const randomBytes = getRandomBytes(SYMBYTES);
   const G = new SHA3(512);
-  const seed = Buffer.alloc(SYMBYTES * 2);
-  G.update(randomBytes).digest({
+  const seed = G.update(randomBytes).digest({
     format: 'binary',
-    buffer: seed,
+    buffer: Buffer.alloc(SYMBYTES * 2),
   });
-  const publicSeed = seed.slice(0, SYMBYTES);
-  const noiseSeed = seed.slice(SYMBYTES, SYMBYTES * 2);
+  const publicSeed = new Uint8Array(seed).slice(0, SYMBYTES);
+  const noiseSeed = new Uint8Array(seed).slice(SYMBYTES, SYMBYTES * 2);
 
   const A = genMatrix(publicSeed, false);
 
@@ -433,14 +484,12 @@ export function kyberCPAPKEKeyGen() {
   numberTheoreticTransformInPlace(s);
   numberTheoreticTransformInPlace(e);
 
-  const t = multiplyPolynomialMatrixAndVector(
-    A,
-    s,
-    Params[selectedParamSet].k,
-    true
-  ); // t = A o s
-  addPolynomialVectorsInPlace(t, t, e);
-  applyBarrettReductionToPolynomialVectorInPlace(t);
+  const t = multiplyPolynomialMatrixAndVector(A, s, Params[selectedParamSet].k); // t = A o s
+  for (let i = 0; i < Params[selectedParamSet].k; i++) {
+    convertPolynomialToMontgomeryInPlace(t[i]);
+  }
+  addPolynomialVectorsInPlace(t, t, e); // t = A o s + e
+  applyBarrettReductionToPolynomialVectorInPlace(t); // Ensure all elements of t are in the range [-(q-1)/2, (q-1)/2], as defined in chapter 1.1 of the Kyber paper.
 
   const polyVecBytes = Params[selectedParamSet].k * POLYBYTES;
   const publicKey = new Uint8Array(polyVecBytes + SYMBYTES);
@@ -470,7 +519,10 @@ function kyberCCAKEMKeyGen() {
   return { secretKey, publicKey };
 }
 
-// Inverse NTT in-place. Described in Section 1.1 of the Kyber paper. Implementation from the original TS implementation
+/**
+ * Inverse NTT in-place. Described in Section 1.1 of the Kyber paper. Implementation from the original TS implementation
+ * @param B byte array to transform
+ */
 function inverseNumberTheoreticTransformInPlace(B: Uint16Array): void {
   const f = 1441;
   let k = 0;
@@ -493,7 +545,11 @@ function inverseNumberTheoreticTransformInPlace(B: Uint16Array): void {
   }
 }
 
-// Compress and serialize a vector of polynomials. Described in Section 1.1 in the Kyber paper.
+/**
+ * Compress and serialize a vector of polynomials. Described in Section 1.1 in the Kyber paper.
+ * @param m vector of polynomials to compress
+ * @returns compressed and serialized vector of polynomials
+ */
 function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
   const r = new Uint8Array(
     Params[selectedParamSet].k === 4
@@ -509,7 +565,7 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
         for (let k = 0; k < 8; k++) {
           const x = m[i][8 * j + k];
           t[k] =
-            (Math.round((2048 / Params[selectedParamSet].q) * x) >>> 0) % 2048;
+            (Math.round((2048 / Params[selectedParamSet].q) * x) >>> 0) % 2048; // TODO: Should probably not use Math.round and modulo here, because it's not constant time
         }
 
         r[rPos + 0] = t[0] >> 0;
@@ -534,7 +590,7 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
         for (let k = 0; k < 4; k++) {
           const x = m[i][4 * j + k];
           t[k] =
-            (Math.round((1024 / Params[selectedParamSet].q) * x) >>> 0) % 1024;
+            (Math.round((1024 / Params[selectedParamSet].q) * x) >>> 0) % 1024; // TODO: Should probably not use Math.round and modulo here, because it's not constant time
         }
 
         r[rPos + 0] = t[0] >> 0;
@@ -550,7 +606,11 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
   return r;
 }
 
-// Compress and serialize a polynomial. Described in Section 1.1 in the Kyber paper.
+/**
+ * Compress and serialize a polynomial. Described in Section 1.1 in the Kyber paper.
+ * @param m polynomial to compress
+ * @returns compressed and serialized polynomial
+ */
 function compressPolynomial(m: Uint16Array): Uint8Array {
   const r = new Uint8Array(Params[selectedParamSet].k === 4 ? 160 : 128);
   const t = new Uint8Array(8);
@@ -558,7 +618,7 @@ function compressPolynomial(m: Uint16Array): Uint8Array {
     for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
       for (let j = 0; j < 8; j++) {
         const x = m[8 * i + j];
-        t[j] = (Math.round((16 / Params[selectedParamSet].q) * x) >>> 0) % 16;
+        t[j] = (Math.round((16 / Params[selectedParamSet].q) * x) >>> 0) % 16; // TODO: Should probably not use Math.round and modulo here, because it's not constant time
       }
 
       r[i * 4] = t[0] | (t[1] << 4);
@@ -570,7 +630,7 @@ function compressPolynomial(m: Uint16Array): Uint8Array {
     for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
       for (let j = 0; j < 8; j++) {
         const x = m[8 * i + j];
-        t[j] = (Math.round((32 / Params[selectedParamSet].q) * x) >>> 0) % 32;
+        t[j] = (Math.round((32 / Params[selectedParamSet].q) * x) >>> 0) % 32; // TODO: Should probably not use Math.round and modulo here, because it's not constant time
       }
 
       r[i * 5] = t[0] | (t[1] << 5);
@@ -583,7 +643,11 @@ function compressPolynomial(m: Uint16Array): Uint8Array {
   return r;
 }
 
-// Implements the Decompress_q(Decode_1(m), 1) of Algorithm 5 in the Kyber paper. Implementation from the reference implementation in C
+/**
+ * Implements the Decompress_q(Decode_1(m), 1) of Algorithm 5 in the Kyber paper. Implementation from the reference implementation in C
+ * @param m message to convert
+ * @returns polynomial decoded from the message
+ */
 function convertMessageToPolynomial(m: Uint8Array): Uint16Array {
   const result = new Uint16Array(Params[selectedParamSet].n);
 
@@ -599,7 +663,13 @@ function convertMessageToPolynomial(m: Uint8Array): Uint16Array {
   return result;
 }
 
-// Encrypt message with public key. Method described in Algorithm 5 in the Kyber paper
+/**
+ * Encrypt message with public key. Method described in Algorithm 5 in the Kyber paper
+ * @param publicKey public key to encrypt with
+ * @param message message to encrypt
+ * @param randomCoins random bytes for noise generation
+ * @returns encrypted message
+ */
 function kyberCPAPKEEncrypt(
   publicKey: Uint8Array,
   message: Uint8Array,
@@ -635,20 +705,18 @@ function kyberCPAPKEEncrypt(
   const u = multiplyPolynomialMatrixAndVector(
     At,
     r,
-    Params[selectedParamSet].k,
-    false
+    Params[selectedParamSet].k
   );
   for (let i = 0; i < Params[selectedParamSet].k; i++) {
     inverseNumberTheoreticTransformInPlace(u[i]);
   }
   addPolynomialVectorsInPlace(u, u, e);
-  applyBarrettReductionToPolynomialVectorInPlace(u);
+  applyBarrettReductionToPolynomialVectorInPlace(u); // Ensure all elements of t are in the range [-(q-1)/2, (q-1)/2], as defined in chapter 1.1 of the Kyber paper.
 
   const [v] = multiplyPolynomialMatrixAndVector(
     [t],
     r,
-    Params[selectedParamSet].k,
-    false
+    Params[selectedParamSet].k
   );
   inverseNumberTheoreticTransformInPlace(v);
   addPolynomialsInPlace(v, v, e2);
@@ -696,6 +764,11 @@ function kyberCCAKEMEncrypt(publicKey: Uint8Array): {
   return { cipherText, sharedSecret };
 }
 
+/**
+ * Decompress and decode a polynomial vector in CPAPKE Decrypt. Described in Algorithm 3 and Section 1.1 of the Kyber paper. Implementation from the reference implementation in C
+ * @param a byte array to decompress
+ * @returns vector of polynomials decoded from the byte array
+ */
 function decompressPolynomialVector(a: Uint8Array): Uint16Array[] {
   const result = new Array(Params[selectedParamSet].k);
   let aPos = 0;
@@ -742,6 +815,11 @@ function decompressPolynomialVector(a: Uint8Array): Uint16Array[] {
   return result;
 }
 
+/**
+ * Decode and decompress a polynomial. Used in CPAPKE Decrypt. Described in Algorithm 3 and Section 1.1 of the Kyber paper. Implementation from the reference implementation in C
+ * @param a byte array to decompress
+ * @returns polynomial decoded from the byte array
+ */
 function decompressPolynomial(a: Uint8Array): Uint16Array {
   const result = new Uint16Array(Params[selectedParamSet].n);
 
@@ -776,6 +854,12 @@ function decompressPolynomial(a: Uint8Array): Uint16Array {
   return result;
 }
 
+/**
+ * Subtract two polynomials. Implementation from the reference implementation in C
+ * @param target polynomial to store the result in
+ * @param a polynomial to subtract from
+ * @param b polynomial to subtract
+ */
 function subtractPolynomialsInPlace(
   target: Uint16Array,
   a: Uint16Array,
@@ -786,6 +870,11 @@ function subtractPolynomialsInPlace(
   }
 }
 
+/**
+ * Encode a polynomial into a byte array. Described in Algorithm 3 in the Kyber paper (the inverse of decode). Implementation from the reference implementation in C
+ * @param a polynomial to encode
+ * @returns byte array encoded from the polynomial
+ */
 function convertPolynomialToMessage(a: Uint16Array): Uint8Array {
   const result = new Uint8Array(SYMBYTES);
   for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
@@ -804,7 +893,12 @@ function convertPolynomialToMessage(a: Uint16Array): Uint8Array {
   return result;
 }
 
-// Decrypt message with private key
+/**
+ * Decrypt message with private key. Described in Algorithm 6 in the Kyber paper
+ * @param secretKey private key to decrypt with
+ * @param cipherText message to decrypt
+ * @returns decrypted message
+ */
 function kyberCPAPKEDecrypt(
   secretKey: Uint8Array,
   cipherText: Uint8Array
@@ -820,13 +914,12 @@ function kyberCPAPKEDecrypt(
   const [mp] = multiplyPolynomialMatrixAndVector(
     [s],
     u,
-    Params[selectedParamSet].k,
-    false
+    Params[selectedParamSet].k
   );
   inverseNumberTheoreticTransformInPlace(mp);
 
   subtractPolynomialsInPlace(mp, v, mp);
-  applyBarrettReductionToPolynomialInPlace(mp);
+  applyBarrettReductionToPolynomialInPlace(mp); // Ensure all elements of t are in the range [-(q-1)/2, (q-1)/2], as defined in chapter 1.1 of the Kyber paper.
 
   return convertPolynomialToMessage(mp);
 }
