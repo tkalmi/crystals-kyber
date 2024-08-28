@@ -59,19 +59,11 @@ const NTT_ZETAS_INV = [
   3127, 3042, 1907, 1836, 1517, 359, 758, 1441,
 ] as const;
 
-// Converts a number to a 8-bit integer
-function toChar(n: number): number {
-  return Number(BigInt.asIntN(8, BigInt(n)));
-}
-
 // Converts a number to a 16-bit integer
+const int16 = new Int16Array(1);
 function toInt16(n: number): number {
-  return Number(BigInt.asIntN(16, BigInt(n)));
-}
-
-// Converts a number to a 32-bit integer
-function toInt32(n: number): number {
-  return Number(BigInt.asIntN(32, BigInt(n)));
+  int16[0] = n;
+  return int16[0];
 }
 
 // Uniform rejection sampling. Described as Algorithm 1: Parse in the Kyber paper
@@ -521,15 +513,15 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
         }
 
         r[rPos + 0] = t[0] >> 0;
-        r[rPos + 1] = toChar(t[0] >> 8) | toChar(t[1] << 3);
-        r[rPos + 2] = toChar(t[1] >> 5) | toChar(t[2] << 6);
+        r[rPos + 1] = (t[0] >> 8) | (t[1] << 3);
+        r[rPos + 2] = (t[1] >> 5) | (t[2] << 6);
         r[rPos + 3] = t[2] >> 2;
-        r[rPos + 4] = toChar(t[2] >> 10) | toChar(t[3] << 1);
-        r[rPos + 5] = toChar(t[3] >> 7) | toChar(t[4] << 4);
-        r[rPos + 6] = toChar(t[4] >> 4) | toChar(t[5] << 7);
+        r[rPos + 4] = (t[2] >> 10) | (t[3] << 1);
+        r[rPos + 5] = (t[3] >> 7) | (t[4] << 4);
+        r[rPos + 6] = (t[4] >> 4) | (t[5] << 7);
         r[rPos + 7] = t[5] >> 1;
-        r[rPos + 8] = toChar(t[5] >> 9) | toChar(t[6] << 2);
-        r[rPos + 9] = toChar(t[6] >> 6) | toChar(t[7] << 5);
+        r[rPos + 8] = (t[5] >> 9) | (t[6] << 2);
+        r[rPos + 9] = (t[6] >> 6) | (t[7] << 5);
         r[rPos + 10] = t[7] >> 3;
 
         rPos += 11;
@@ -546,9 +538,9 @@ function compressPolynomialVector(m: Uint16Array[]): Uint8Array {
         }
 
         r[rPos + 0] = t[0] >> 0;
-        r[rPos + 1] = toChar(t[0] >> 8) | toChar(t[1] << 2);
-        r[rPos + 2] = toChar(t[1] >> 6) | toChar(t[2] << 4);
-        r[rPos + 3] = toChar(t[2] >> 4) | toChar(t[3] << 6);
+        r[rPos + 1] = (t[0] >> 8) | (t[1] << 2);
+        r[rPos + 2] = (t[1] >> 6) | (t[2] << 4);
+        r[rPos + 3] = (t[2] >> 4) | (t[3] << 6);
         r[rPos + 4] = t[3] >> 2;
 
         rPos += 5;
@@ -569,10 +561,10 @@ function compressPolynomial(m: Uint16Array): Uint8Array {
         t[j] = (Math.round((16 / Params[selectedParamSet].q) * x) >>> 0) % 16;
       }
 
-      r[i * 4] = t[0] | toChar(t[1] << 4);
-      r[i * 4 + 1] = t[2] | toChar(t[3] << 4);
-      r[i * 4 + 2] = t[4] | toChar(t[5] << 4);
-      r[i * 4 + 3] = t[6] | toChar(t[7] << 4);
+      r[i * 4] = t[0] | (t[1] << 4);
+      r[i * 4 + 1] = t[2] | (t[3] << 4);
+      r[i * 4 + 2] = t[4] | (t[5] << 4);
+      r[i * 4 + 3] = t[6] | (t[7] << 4);
     }
   } else {
     for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
@@ -581,11 +573,11 @@ function compressPolynomial(m: Uint16Array): Uint8Array {
         t[j] = (Math.round((32 / Params[selectedParamSet].q) * x) >>> 0) % 32;
       }
 
-      r[i * 5] = t[0] | toChar(t[1] << 5);
-      r[i * 5 + 1] = toChar(t[1] >> 3) | toChar(t[2] << 2) | toChar(t[3] << 7);
-      r[i * 5 + 2] = toChar(t[3] >> 1) | toChar(t[4] << 4);
-      r[i * 5 + 3] = toChar(t[4] >> 4) | toChar(t[5] << 1) | toChar(t[6] << 6);
-      r[i * 5 + 4] = toChar(t[6] >> 2) | toChar(t[7] << 3);
+      r[i * 5] = t[0] | (t[1] << 5);
+      r[i * 5 + 1] = (t[1] >> 3) | (t[2] << 2) | (t[3] << 7);
+      r[i * 5 + 2] = (t[3] >> 1) | (t[4] << 4);
+      r[i * 5 + 3] = (t[4] >> 4) | (t[5] << 1) | (t[6] << 6);
+      r[i * 5 + 4] = (t[6] >> 2) | (t[7] << 3);
     }
   }
   return r;
@@ -758,12 +750,12 @@ function decompressPolynomial(a: Uint8Array): Uint16Array {
     const t = new Uint8Array(8);
     for (let i = 0; i < Params[selectedParamSet].n / 8; i++) {
       t[0] = a[aPos];
-      t[1] = toChar(a[aPos] >> 5) | toChar(a[aPos + 1] << 3);
+      t[1] = (a[aPos] >> 5) | (a[aPos + 1] << 3);
       t[2] = a[aPos + 1] >> 2;
-      t[3] = toChar(a[aPos + 1] >> 7) | toChar(a[aPos + 2] << 1);
-      t[4] = toChar(a[aPos + 2] >> 4) | toChar(a[aPos + 3] << 4);
+      t[3] = (a[aPos + 1] >> 7) | (a[aPos + 2] << 1);
+      t[4] = (a[aPos + 2] >> 4) | (a[aPos + 3] << 4);
       t[5] = a[aPos + 3] >> 1;
-      t[6] = toChar(a[aPos + 3] >> 6) | toChar(a[aPos + 4] << 2);
+      t[6] = (a[aPos + 3] >> 6) | (a[aPos + 4] << 2);
       t[7] = a[aPos + 4] >> 3;
       aPos += 5;
 
