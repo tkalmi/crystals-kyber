@@ -1,6 +1,7 @@
 # TypeScript Implementation of CRYSTALS-Kyber
 
-> [!WARNING] Do NOT use this for anything serious. I am NOT a cryptography or
+> [!WARNING]
+> Do NOT use this for anything serious. I am NOT a cryptography or
 > infosec expert. This program is purely a hobby project I started to explore
 > low-level TS/JS coding and learn more about post-quantum cryptography.
 
