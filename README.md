@@ -13,11 +13,13 @@ key encapsulation mechanism known as
 I referenced the original <a href="https://github.com/pq-crystals/kyber">C</a>
 and <a href="https://github.com/fisherstevenk/crystals-kyber-ts">TypeScript</a>
 implementations, while also following the CRYSTALS-Kyber paper as closely as I
-could. The main difference between this version and the original TypeScript
-implementation is that this version uses `TypedArray` construct (`Uint8Array`
-and `Uint16Array`) instead of an `Array` of numbers. This is simply an
-implementation detail I chose to experiment with low-level bit shifting -- I
-haven't investigated whether it offers any tangible performance benefits.
+could (In hindsight, I probably should have followed the NIST FIPS 203 paper
+instead, as it breaks down the operations in more detail). The main difference
+between this version and the original TypeScript implementation is that this
+version uses `TypedArray` construct (`Uint8Array` and `Uint16Array`) instead of
+an `Array` of numbers. This is simply an implementation detail I chose to
+experiment with low-level bit shifting -- I haven't investigated whether it
+offers any tangible performance benefits.
 
 ## Usage
 
