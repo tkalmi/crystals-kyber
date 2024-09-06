@@ -1,5 +1,7 @@
 import { SHA3, SHAKE } from 'sha3';
 import crypto from 'crypto';
+import { program } from 'commander';
+import fs from 'node:fs';
 
 // Param sets from Table 1 of the Kyber paper
 const Params = {
@@ -957,73 +959,87 @@ function kyberCCAKEMDecrypt(
   }
 }
 
-// TODO: Implement CLI ('commander' or use parseArgs from node:util)
 // This is a KEM algorithm. So, you create a random key pair (public and private key), and then send the public key to the other party. The other party uses the public key to create a shared secret and a cipher text (i.e,. the shared secret in an encrypted form). The other party sends the cipher text back to the first party. The first party uses their private key to decrypt the cipher text and get the shared secret. Now both parties have the shared secret -- this can be used as a symmetric key for encryption/decryption (e.g., with AES).
 let selectedParamSet: keyof typeof Params = 'Kyber512' as const;
+program
+  .name('crystals-kyber')
+  .description('CRYSTALS-Kyber KEM implementation')
+  .version('0.1.0');
 
-for (const [paramSet, path] of [
-  ['Kyber512', './og-kyber/crystals-kyber-ts/src/services/kyber512.service'],
-  ['Kyber768', './og-kyber/crystals-kyber-ts/src/services/kyber768.service'],
-  ['Kyber1024', './og-kyber/crystals-kyber-ts/src/services/kyber1024.service'],
-] as const) {
-  import(path).then((imported) => {
-    const KyberService = imported[`${paramSet}Service`];
-    // Test on yourself
-    console.log('\nTesting with', paramSet);
-    console.log('\n----------------------\n');
-    selectedParamSet = paramSet as keyof typeof Params;
-
-    const Instance = new KyberService();
-    const { publicKey: publicKeyU, secretKey: secretKeyU } =
-      kyberCCAKEMKeyGen();
-    const publicKey = Array.from(publicKeyU);
-    const secretKey = Array.from(secretKeyU);
-
-    console.log('Test: Can decrypt its own message');
-    const { cipherText, sharedSecret } = kyberCCAKEMEncrypt(publicKeyU);
-    const decrypted = kyberCCAKEMDecrypt(secretKeyU, cipherText);
-    console.assert(
-      sharedSecret.toString() === decrypted.toString(),
-      'Houston, we have a bug'
+program
+  .command('keygen')
+  .description('Generate a key pair')
+  .option('-p, --paramSet <512|768|1024>', 'Parameter set to use', '512')
+  .option('--publicKeyFile <string>', 'File where public key should be written')
+  .option('--secretKeyFile <string>', 'File where secret key should be written')
+  .action((options) => {
+    selectedParamSet = `Kyber${options.paramSet}` as keyof typeof Params;
+    const { publicKey, secretKey } = kyberCCAKEMKeyGen();
+    fs.writeFileSync(
+      options.publicKeyFile,
+      Buffer.from(publicKey).toString('hex')
     );
-    console.log('Success!');
-
-    // Sanity check that the other system works
-    console.log('\nTest: the other system can decrypt its own message');
-    const [c, s] = Instance.encrypt(publicKey);
-    const d = Instance.decrypt(c, secretKey);
-    console.assert(
-      s.toString() === d.toString(),
-      'the other system is not working'
+    fs.writeFileSync(
+      options.secretKeyFile,
+      Buffer.from(secretKey).toString('hex')
     );
-    console.log('Success!');
-
-    // Other system can use our public key to encrypt a message, end we can decrypt it
-    console.log(
-      '\nTest: Other system can encrypt a message and we can decrypt it'
-    );
-    const [cipherText2, sharedSecret2] = Instance.encrypt(publicKey);
-    const decrypted2 = kyberCCAKEMDecrypt(
-      secretKeyU,
-      new Uint8Array(cipherText2)
-    );
-    console.assert(
-      sharedSecret2.toString() === Array.from(decrypted2).toString(),
-      'could not decrypt the message correctly'
-    );
-    console.log('Success!');
-
-    // We can use other system's public key to encrypt a message, and they can decrypt it
-    console.log(
-      '\nTest: We can encrypt a message and other system can decrypt it'
-    );
-    const { cipherText: cipherText3, sharedSecret: sharedSecret3 } =
-      kyberCCAKEMEncrypt(new Uint8Array(publicKey));
-    const decrypted3 = Instance.decrypt(Array.from(cipherText3), secretKey);
-    console.assert(
-      Array.from(sharedSecret3).toString() === decrypted3.toString(),
-      'could not do it'
-    );
-    console.log('Success!');
   });
-}
+
+program
+  .command('encrypt')
+  .description('Generate a shared secret and a cipher text with the public key')
+  .option('-p, --paramSet <512|768|1024>', 'Parameter set to use', '512')
+  .option('--publicKeyFile <string>', 'File where public key is')
+  .option(
+    '--cipherFile <string>',
+    'File where cipher text of shared secret should be written'
+  )
+  .option(
+    '--sharedSecretFile <string>',
+    'File where shared secret should be written'
+  )
+  .action((options) => {
+    selectedParamSet = `Kyber${options.paramSet}` as keyof typeof Params;
+    const publicKey = fs.readFileSync(options.publicKeyFile, {
+      encoding: 'ascii',
+    });
+    const publicKeyBuffer = new Uint8Array(Buffer.from(publicKey, 'hex'));
+    const { cipherText, sharedSecret } = kyberCCAKEMEncrypt(publicKeyBuffer);
+    fs.writeFileSync(
+      options.cipherFile,
+      Buffer.from(cipherText).toString('hex')
+    );
+    fs.writeFileSync(
+      options.sharedSecretFile,
+      Buffer.from(sharedSecret).toString('hex')
+    );
+  });
+
+program
+  .command('decrypt')
+  .description('Decrypt a cipher text using private key')
+  .option('-p, --paramSet <512|768|1024>', 'Parameter set to use', '512')
+  .option('--secretKeyFile <string>', 'File where secret key is')
+  .option('--cipherFile <string>', 'File where cipher text is')
+  .option(
+    '--sharedSecretFile <string>',
+    'File where shared secret should be written'
+  )
+  .action((options) => {
+    selectedParamSet = `Kyber${options.paramSet}` as keyof typeof Params;
+    const secretKey = fs.readFileSync(options.secretKeyFile, {
+      encoding: 'ascii',
+    });
+    const secretKeyBuffer = new Uint8Array(Buffer.from(secretKey, 'hex'));
+    const cipherText = fs.readFileSync(options.cipherFile, {
+      encoding: 'ascii',
+    });
+    const cipherTextBuffer = new Uint8Array(Buffer.from(cipherText, 'hex'));
+    const sharedSecret = kyberCCAKEMDecrypt(secretKeyBuffer, cipherTextBuffer);
+    fs.writeFileSync(
+      options.sharedSecretFile,
+      Buffer.from(sharedSecret).toString('hex')
+    );
+  });
+
+program.parse(process.argv);
